@@ -1,0 +1,34 @@
+{
+  "name": "touristbot",
+  "version": "1.0.0",
+  "description": "A bot that ....\r 1. Translation\r 2. Analyze Landmarks\r 3. Things to do around landmark\r 4. Places to eat nearby\r 5. FAQ's",
+  "main": "mainApp.js",
+  "dependencies": {
+    "bluebird": "^3.5.0",
+    "botbuilder": "^3.8.4",
+    "dotenv-extended": "^1.0.4",
+    "html-entities": "^1.2.1",
+    "mstranslator": "^3.0.0",
+    "needle": "^1.6.0",
+    "request": "^2.81.0",
+    "restify": "^4.3.1",
+    "valid-url": "^1.0.9",
+    "xml2js": "^0.4.17",
+    "urlencode": "^1.1.0",
+    "url": "^0.11.0"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adityab2017/touristBot.git"
+  },
+  "bugs": {
+    "url": "https://github.com/adityab2017/touristBot/issues"
+  },
+  "homepage": "https://github.com/adityab2017/touristBot#readme"
+}

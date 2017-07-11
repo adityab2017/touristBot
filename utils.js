@@ -11,7 +11,7 @@ var stdResponse = {
     firstInit: "This is your first time using me, which language do you prefer me to reply in?",
     langChanged: "Okay! Your language preference has been changed. ",
     askQn: "To begin, just ask me a question like",
-    queryExample: "\n\n- Scan this landmark\n\n- Tell me places to visit",
+    queryExample: "\n\n- Scan this landmark\n\n- I have questions\n\n- Places to eat",
     techLimitation: "Due to technical limitations, please send me your requests in English.",
     didNotUnderstand: "Sorry, I didn't understand what you said.",
     langReset: "Your language preferences have been reset.",
@@ -69,12 +69,11 @@ exports.handleSuccessResponse = function (session, caption) {
             };
             client.translate(paramsTranslateSuccess, function (err, dataSuccess) {
                 session.send(dataSuccess);
-                //session.send(caption);
                 session.endDialog(caption);
             })
         } else {
             session.send(queryResponse.successLandmark);
-            session.send(caption)
+            session.endDialog(caption)
         };
     }
     else {
@@ -85,10 +84,10 @@ exports.handleSuccessResponse = function (session, caption) {
                 to: session.userData['Lang']
             };
             client.translate(paramsTranslateFail, function (err, dataFail) {
-                session.send(dataFail);
+                session.endDialog(dataFail);
             })
         } else {
-            session.send(queryResponse.failLandmark);
+            session.endDialog(queryResponse.failLandmark);
         };
     }
 };
@@ -106,9 +105,9 @@ exports.handleErrorResponse = function (session, error) {
             to: session.userData['Lang']
         };
         client.translate(paramsTranslateErr, function (err, dataErr) {
-            session.send(dataErr);
+            session.endDialog(dataErr);
         })
     } else {
-        session.send(clientErrorMessage);
+        session.endDialog(clientErrorMessage);
     };
 };

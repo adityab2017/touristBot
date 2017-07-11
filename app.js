@@ -1,16 +1,26 @@
-/*-----------------------------------------------------------------------------
-An image caption bot for the Microsoft Bot Framework. 
------------------------------------------------------------------------------*/
-
-// This loads the environment variables from the .env file
+﻿// JavaScript source code
+//https://d271dy38uexjzn.cloudfront.net/wp-content/uploads/image04-9.jpg
+// References
 require('dotenv-extended').load();
+var needle              = require('needle'),
+    url                 = require('url'),
+    validUrl            = require('valid-url'),
+    bluebird            = require('bluebird'),
+    landmarkIdentify = require('./landmark_identify'),
+    restify             = require('restify'),
+    builder             = require('botbuilder'),
+    request             = require('request'),
+    utils               = require('./utils'),
+    translator          = require('mstranslator'),
+    cognitiveservices   = require('./qna/botbuilder-cognitiveservices'); 
 
-var builder = require('botbuilder'),
-    needle = require('needle'),
-    restify = require('restify'),
-    url = require('url'),
-    validUrl = require('valid-url'),
-    captionService = require('./caption-service');
+//Setup Translator
+var client = new translator({
+    api_key: process.env.MICROSOFT_TRANSLATOR_KEY // use this for the new token API. 
+}, true);
+
+//Standard Replies
+var standardReplies = utils.stdResponse;
 
 //=========================================================
 // Bot Setup
@@ -22,66 +32,233 @@ server.listen(process.env.port || process.env.PORT || 3978, function () {
     console.log('%s listening to %s', server.name, server.url);
 });
 
+//LUIS Setup
+var recognizer = new builder.LuisRecognizer('https://westus.api.cognitive.microsoft.com/luis/v2.0/apps/' + process.env.LUIS_APP_KEY + '?subscription-key=' + process.env.LUIS_SUBS_KEY +'&verbose=true&timezoneOffset=0&q=');
+var intentDialog = new builder.IntentDialog({ recognizers: [recognizer] });
+
+//QnA Setup
+var qnaRecognizer = new cognitiveservices.QnAMakerRecognizer({
+    knowledgeBaseId: 'd0880ff1-b7ce-488a-8d5e-b20337c7b605', 
+    subscriptionKey: '47e2641a113545c3bd057cf8c6618bdd'});
+	
+var basicQnAMakerDialog = new cognitiveservices.QnAMakerDialog({
+	recognizers: [qnaRecognizer],
+	defaultMessage: 'No match! Try changing the query terms!',
+	qnaThreshold: 0.3
+});
+
 // Create chat bot
 var connector = new builder.ChatConnector({
     appId: process.env.MICROSOFT_APP_ID,
     appPassword: process.env.MICROSOFT_APP_PASSWORD
 });
-
+var bot = new builder.UniversalBot(connector, { persistConversationData: true });
 server.post('/api/messages', connector.listen());
 
-// Gets the caption by checking the type of the image (stream vs URL) and calling the appropriate caption service method.
-var bot = new builder.UniversalBot(connector, function (session) {
-    if (hasImageAttachment(session)) {
-        var stream = getImageStreamFromMessage(session.message);
-        captionService
-            .getCaptionFromStream(stream)
-            .then(function (caption) { handleSuccessResponse(session, caption); })
-            .catch(function (error) { handleErrorResponse(session, error); });
+// Bot Dialogs
+bot.dialog('/', intentDialog);
+
+//LUIS Intents
+intentDialog.matches(/\b(hello|hi|hey|how are you)\b/i, '/conversation')
+    .matches(/\b(tell me places to eat|places to eat|food)\b/i, '/hotels')
+    .matches(/\b(rlang)\b/i, '/resetLang')
+    .matches(/\b(rbot)\b/i, '/resetLang')
+    .matches('getPlacethruPic', '/landmark')
+    .matches('questions', '/qna')
+    .onDefault('/defaultResp');
+
+// Bot Dialog Functions
+bot.dialog('/qna', [
+    function (session) {
+        builder.Prompts.text(session, 'Hi! What is your question?');
+    },
+    function (session, results) {
+        session.message.text = results.response;
+        session.replaceDialog('/qna2');
+        session.endDialog();
+    }
+]);
+
+bot.dialog('/qna2', basicQnAMakerDialog);
+
+bot.dialog('/hotels', require('./hotels'));
+
+bot.dialog('/defaultResp', function (session, args) {
+    if (session.userData['Lang']) {
+        var paramsTranslateToDefault = {
+            text: standardReplies.didNotUnderstand,
+            from: 'en',
+            to: session.userData['Lang']
+        };
+        client.translate(paramsTranslateToDefault, function (err, dataDefault) {
+            session.endDialog(dataDefault);
+        })
     } else {
-        var imageUrl = parseAnchorTag(session.message.text) || (validUrl.isUri(session.message.text) ? session.message.text : null);
-        if (imageUrl) {
-            captionService
-                .getCaptionFromUrl(imageUrl)
-                .then(function (caption) { handleSuccessResponse(session, caption); })
-                .catch(function (error) { handleErrorResponse(session, error); });
+        session.endDialog(standardReplies.didNotUnderstand);
+    };
+});
+
+bot.dialog('/resetLang', function (session, args) {
+    session.sendTyping();
+    session.userData['Lang'] = null;
+    session.endDialog(standardReplies.langReset);
+});
+
+bot.dialog('/resetBot', function (session, args) {
+    session.sendTyping();
+    session.userData['Lang'] = null;
+    session.endDialog(standardReplies.resetSuccess);
+    session.endConversation();
+});
+
+bot.dialog('/conversation', [function (session, args) {
+    session.sendTyping();
+    var lang = session.userData['Lang'];
+    if (!lang) {
+            session.send("Hello! Welcome to the Tourist Bot.");
+            console.log("User's first load or language reset.");
+
+            builder.Prompts.choice(session, standardReplies.firstInit, "English|Chinese|Japanese|Tamil|Hindi|Cancel");
+    } else {
+            console.log("User Lang Data Exists: " + lang);
+
+            if (lang == "en") {
+                session.endDialog(standardReplies.startCommand + standardReplies.queryExample);
+            } else {
+                var paramsTranslateTo = {
+                    text: standardReplies.startCommand,
+                    from: 'en',
+                    to: lang
+                };
+                var paramsTranslateEg = {
+                    text: standardReplies.queryExample,
+                    from: 'en',
+                    to: lang
+                };
+
+                client.translate(paramsTranslateTo, function (err, dataStart) {
+                    client.translate(paramsTranslateEg, function (err, dataEg) {
+                        session.send(dataStart);
+                        session.send(dataEg);
+                        session.endDialog('i.e.\n\n (' + standardReplies.queryExample + '\n\n)');
+                    });
+                });
+            }
+    }
+    }, function (session, results) {
+        session.sendTyping();
+        if (results.response && results.response.entity !== 'Cancel') {
+            var fullLang = "English";
+
+            //Add more languages for your liking, add prompt on top also
+            if (results.response.entity.toUpperCase() == "ENGLISH") {
+                session.userData['Lang'] = 'en';
+                fullLang = "English";
+            } else if (results.response.entity.toUpperCase() == "CHINESE") {
+                session.userData['Lang'] = 'zh-chs';
+                fullLang = "中文";
+            } else if (results.response.entity.toUpperCase() == "JAPANESE") {
+                session.userData['Lang'] = 'ja';
+                fullLang = "日本語";
+            } else if (results.response.entity.toUpperCase() == "TAMIL") {
+                session.userData['Lang'] = 'ta';
+                fullLang = "தமிழ்";
+            } else if (results.response.entity.toUpperCase() == "HINDI") {
+                session.userData['Lang'] = 'hi';
+                fullLang = "हिन्दी";
+            }
+
+            var paramsTranslateTo = {
+                text: standardReplies.langChanged,
+                from: 'en',
+                to: session.userData['Lang']
+            };
+
+            var paramsTranslateTo2 = {
+                text: standardReplies.techLimitation,
+                from: 'en',
+                to: session.userData['Lang']
+            };
+
+            var paramsTranslateTo3 = {
+                text: standardReplies.askQn,
+                from: 'en',
+                to: session.userData['Lang']
+            };
+
+           
+
+            client.translate(paramsTranslateTo, function (err, data) {
+                client.translate(paramsTranslateTo2, function (err, data2) {
+                    client.translate(paramsTranslateTo3, function (err, data3) {
+                        session.send(data + "(" + fullLang + ")");
+                        session.send(data2);
+                        session.endDialog(data3 + standardReplies.queryExample);
+                    });
+                });
+            });
         } else {
-            session.send('Did you upload an image? I\'m more of a visual person. Try sending me an image or an image URL');
+            session.endDialog(standardReplies.notReady);
         }
     }
-});
+    ]);
 
-//=========================================================
-// Bots Events
-//=========================================================
+//Image Landmark Caption
+bot.dialog('/landmark', function (session, args) {
+    
+    if (utils.hasImageAttachment(session)) {
+        var stream = getImageStreamFromMessage(session.message);
+        landmarkIdentify
+            .getCaptionFromStream(stream)
+            .then(function (caption) { utils.handleSuccessResponse(session, caption);sess })
+            .catch(function (error) { utils.handleErrorResponse(session, error); });
+    }
+    else if (utils.parseAnchorTag(session.message.text) || (validUrl.isUri(session.message.text) ? session.message.text : null)) {
+        var imageUrl = utils.parseAnchorTag(session.message.text) || (validUrl.isUri(session.message.text) ? session.message.text : null);
+        if (imageUrl) {
+            landmarkIdentify
+                .getCaptionFromUrl(imageUrl)
+                .then(function (caption) { utils.handleSuccessResponse(session, caption); })
+                .catch(function (error) { utils.handleErrorResponse(session, error); });
+        }
+    }
+    else if (session.message.text == 'exit') {
+        if (session.userData['Lang']) {
+            var paramsTranslate = {
+                text: standardReplies.headBack,
+                from: 'en',
+                to: session.userData['Lang']
+        };
+        client.translate(paramsTranslate, function (err, dataTranslate) {
+            session.endDialog(dataTranslate);
+        })
+        } else {
+            session.endDialog(standardReplies.headBack);
+        };
+    }
 
-//Sends greeting message when the bot is first added to a conversation
-bot.on('conversationUpdate', function (message) {
-    if (message.membersAdded) {
-        message.membersAdded.forEach(function (identity) {
-            if (identity.id === message.address.bot.id) {
-                var reply = new builder.Message()
-                    .address(message.address)
-                    .text('Hi! I am ImageCaption Bot. I can understand the content of any image and try to describe it as well as any human. Try sending me an image or an image URL.');
-                bot.send(reply);
-            }
-        });
+    else {
+         if (session.userData['Lang']) {
+            var paramsTranslate = {
+                text: standardReplies.imageUpload,
+                from: 'en',
+                to: session.userData['Lang']
+            };
+            client.translate(paramsTranslate, function (err, dataDefault) {
+                session.send(dataDefault);
+            })
+         } else {
+            session.send(standardReplies.imageUpload);
+         };
     }
 });
 
-
-//=========================================================
-// Utilities
-//=========================================================
-function hasImageAttachment(session) {
-    return session.message.attachments.length > 0 &&
-        session.message.attachments[0].contentType.indexOf('image') !== -1;
-}
-
+//Inline utilities
+//Get image from input
 function getImageStreamFromMessage(message) {
     var headers = {};
     var attachment = message.attachments[0];
-    if (checkRequiresToken(message)) {
+    if (utils.checkRequiresToken(message)) {
         // The Skype attachment URLs are secured by JwtToken,
         // you should set the JwtToken of your bot as the authorization header for the GET request your bot initiates to fetch the image.
         // https://github.com/Microsoft/BotBuilder/issues/662
@@ -96,46 +273,4 @@ function getImageStreamFromMessage(message) {
 
     headers['Content-Type'] = attachment.contentType;
     return needle.get(attachment.contentUrl, { headers: headers });
-}
-
-function checkRequiresToken(message) {
-    return message.source === 'skype' || message.source === 'msteams';
-}
-
-/**
- * Gets the href value in an anchor element.
- * Skype transforms raw urls to html. Here we extract the href value from the url
- * @param {string} input Anchor Tag
- * @return {string} Url matched or null
- */
-function parseAnchorTag(input) {
-    var match = input.match('^<a href=\"([^\"]*)\">[^<]*</a>$');
-    if (match && match[1]) {
-        return match[1];
-    }
-
-    return null;
-}
-
-//=========================================================
-// Response Handling
-//=========================================================
-function handleSuccessResponse(session, caption) {
-    if (caption) {
-        session.send('I think it\'s ' + caption);
-    }
-    else {
-        session.send('Couldn\'t find a caption for this one');
-    }
-
-}
-
-function handleErrorResponse(session, error) {
-    var clientErrorMessage = 'Oops! Something went wrong. Try again later.';
-    if (error.message && error.message.indexOf('Access denied') > -1) {
-        clientErrorMessage += "\n" + error.message;
-    }
-
-    console.error(error);
-    session.send(clientErrorMessage);
 }
