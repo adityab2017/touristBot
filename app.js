@@ -60,7 +60,7 @@ bot.dialog('/', intentDialog);
 
 //LUIS Intents
 intentDialog.matches(/\b(hello|hi|hey|how are you)\b/i, '/conversation')
-    .matches(/\b(tell me places to eat|places to eat|food)\b/i, '/hotels')
+    .matches(/\b(tell me places to eat|places to eat|food|eat)\b/i, '/hotels')
     .matches(/\b(rlang)\b/i, '/resetLang')
     .matches(/\b(rbot)\b/i, '/resetLang')
     .matches('getPlacethruPic', '/landmark')

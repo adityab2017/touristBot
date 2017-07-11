@@ -76,7 +76,7 @@ function extractCaption(body) {
     //    return body.categories.landmarks[0].name;
     //}
 
-    if (body.categories[0].detail && body.categories[0].detail.landmarks) {
+    if (body.categories[0].detail && body.categories[0].detail.landmarks[0] && body.categories[0].detail.landmarks[0].name) {
         return JSON.stringify(body.categories[0].detail.landmarks[0].name);
     }
     else {
