@@ -174,16 +174,24 @@ bot.dialog('/conversation', [function (session, args) {
     }
     ]);
 
-
 //Image Landmark Caption
 bot.dialog('/landmark', function (session, args) {
     
     if (utils.hasImageAttachment(session)) {
-        var stream = utils.getImageStreamFromMessage(session.message);
+        var stream = getImageStreamFromMessage(session.message);
         captionService
             .getCaptionFromStream(stream)
             .then(function (caption) { utils.handleSuccessResponse(session, caption); })
             .catch(function (error) { utils.handleErrorResponse(session, error); });
+    }
+    else if (utils.parseAnchorTag(session.message.text) || (validUrl.isUri(session.message.text) ? session.message.text : null)) {
+        var imageUrl = utils.parseAnchorTag(session.message.text) || (validUrl.isUri(session.message.text) ? session.message.text : null);
+        if (imageUrl) {
+            captionService
+                .getCaptionFromUrl(imageUrl)
+                .then(function (caption) { utils.handleSuccessResponse(session, caption); })
+                .catch(function (error) { utils.handleErrorResponse(session, error); });
+        }
     }
     else if (session.message.text == 'exit') {
         if (session.userData['Lang']) {
@@ -199,27 +207,41 @@ bot.dialog('/landmark', function (session, args) {
             session.endDialog(standardReplies.headBack);
         };
     }
+
     else {
-        //Potential reason for error after session.send
-        var imageUrl = utils.parseAnchorTag(session.message.text) || (validUrl.isUri(session.message.text) ? session.message.text : null);
-        if (imageUrl) {
-            captionService
-                .getCaptionFromUrl(imageUrl)
-                .then(function (caption) { utils.handleSuccessResponse(session, caption); })
-                .catch(function (error) { utils.handleErrorResponse(session, error); });
-        } else {
-            if (session.userData['Lang']) {
-                var paramsTranslate = {
-                    text: standardReplies.imageUpload,
-                    from: 'en',
-                    to: session.userData['Lang']
-                };
-                client.translate(paramsTranslate, function (err, dataDefault) {
-                    session.send(dataDefault);
-                })
-            } else {
-                session.send(standardReplies.imageUpload);
+         if (session.userData['Lang']) {
+            var paramsTranslate = {
+                text: standardReplies.imageUpload,
+                from: 'en',
+                to: session.userData['Lang']
             };
-        }
+            client.translate(paramsTranslate, function (err, dataDefault) {
+                session.send(dataDefault);
+            })
+         } else {
+            session.send(standardReplies.imageUpload);
+         };
     }
 });
+
+//Get image from input
+
+function getImageStreamFromMessage(message) {
+    var headers = {};
+    var attachment = message.attachments[0];
+    if (utils.checkRequiresToken(message)) {
+        // The Skype attachment URLs are secured by JwtToken,
+        // you should set the JwtToken of your bot as the authorization header for the GET request your bot initiates to fetch the image.
+        // https://github.com/Microsoft/BotBuilder/issues/662
+        connector.getAccessToken(function (error, token) {
+            var tok = token;
+            headers['Authorization'] = 'Bearer ' + token;
+            headers['Content-Type'] = 'application/octet-stream';
+
+            return needle.get(attachment.contentUrl, { headers: headers });
+        });
+    }
+
+    headers['Content-Type'] = attachment.contentType;
+    return needle.get(attachment.contentUrl, { headers: headers });
+}
